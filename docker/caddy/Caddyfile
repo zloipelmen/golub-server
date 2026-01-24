@@ -1,0 +1,10 @@
+:443 {
+    tls /etc/caddy/certs/cert.pem /etc/caddy/certs/key.pem
+
+    @ws path /ws
+    reverse_proxy @ws server:8080
+
+    reverse_proxy /healthz server:8080
+    reverse_proxy /api/* server:8080
+    reverse_proxy server:8080
+}

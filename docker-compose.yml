@@ -1,24 +1,45 @@
 services:
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: app
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
     ports:
-      - "127.0.0.1:5432:5432"
+      - "${PUBLIC_PORT:-8443}:443/tcp"
+      # Нужно только для Let's Encrypt по домену (можно включить позже)
+      - "${PUBLIC_HTTP_PORT:-8080}:80/tcp"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./docker/caddy/certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
 
   server:
     build: .
-    network_mode: "host"
+    restart: unless-stopped
     environment:
-      HTTP_ADDR: "172.29.172.1:8080"
-      DATABASE_URL: "postgres://app:app@127.0.0.1:5432/app?sslmode=disable"
+      # ВАЖНО: server слушает только ВНУТРИ docker-сети
+      HTTP_ADDR: "0.0.0.0:8080"
+      # DATABASE_URL оставь как у тебя (пример ниже)
+      DATABASE_URL: "postgres://app:app@db:5432/app?sslmode=disable"
+    expose:
+      - "8080"
     depends_on:
       - db
 
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    # ВАЖНО: никаких ports наружу
+
 volumes:
-  db_data: {}
+  db_data:
+  caddy_data:
+  caddy_config:
 
