@@ -105,8 +105,8 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	_ = wsConn.SetReadDeadline(time.Now().Add(20 * time.Second))
 	var env Envelope
-	if err := wsConn.ReadJSON(&env); err != nil || env.Type != "auth" {
-		conn.Send(Envelope{Type: "error", ReqID: env.ReqID, Payload: mustJSON(ErrorPayload{
+	if err := wsConn.ReadJSON(&env); err != nil || env.Type != TypeAuth {
+		conn.Send(Envelope{Type: TypeError, ReqID: env.ReqID, Payload: mustJSON(ErrorPayload{
 			Code: "AUTH_REQUIRED", Message: "first message must be auth",
 		})})
 		conn.Close()
@@ -115,7 +115,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	var ap AuthPayload
 	if err := json.Unmarshal(env.Payload, &ap); err != nil {
-		conn.Send(Envelope{Type: "error", ReqID: env.ReqID, Payload: mustJSON(ErrorPayload{
+		conn.Send(Envelope{Type: TypeError, ReqID: env.ReqID, Payload: mustJSON(ErrorPayload{
 			Code: "BAD_REQUEST", Message: "invalid auth payload",
 		})})
 		conn.Close()
@@ -124,7 +124,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 
 	userID, deviceID, err := h.authSvc.AuthByInvite(r.Context(), ap.InviteCode, ap.DeviceKey, ap.DeviceName)
 	if err != nil {
-		conn.Send(Envelope{Type: "error", ReqID: env.ReqID, Payload: mustJSON(ErrorPayload{
+		conn.Send(Envelope{Type: TypeError, ReqID: env.ReqID, Payload: mustJSON(ErrorPayload{
 			Code: "AUTH_FAILED", Message: err.Error(),
 		})})
 		conn.Close()
@@ -134,7 +134,7 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	h.hub.Register(userID, deviceID, conn)
 	defer h.hub.Unregister(userID, deviceID)
 
-	conn.Send(Envelope{Type: "auth_ok", ReqID: env.ReqID, Payload: mustJSON(AuthOKPayload{
+	conn.Send(Envelope{Type: TypeAuthOK, ReqID: env.ReqID, Payload: mustJSON(AuthOKPayload{
 		UserID: userID, DeviceID: deviceID, ServerTime: time.Now().UTC().Format(time.RFC3339Nano),
 	})})
 
@@ -148,12 +148,12 @@ func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		}
 
 		switch in.Type {
-		case "sync":
+		case TypeSync:
 			h.handleSync(r.Context(), conn, userID, in)
-		case "send_message":
+		case TypeSendMessage:
 			h.handleSendMessage(r.Context(), conn, userID, deviceID, in)
 		default:
-			conn.Send(Envelope{Type: "error", ReqID: in.ReqID, Payload: mustJSON(ErrorPayload{
+			conn.Send(Envelope{Type: TypeError, ReqID: in.ReqID, Payload: mustJSON(ErrorPayload{
 				Code: "UNKNOWN_TYPE", Message: "unknown event type",
 			})})
 		}
