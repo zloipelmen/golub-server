@@ -5,6 +5,9 @@ import (
 	"log"
 	"net/http"
 	"time"
+	"net"
+	"net/url"
+	"strings"
 
 	"messenger/internal/auth"
 	"messenger/internal/storage"
@@ -29,16 +32,54 @@ func NewHandler(hub *Hub, authSvc *auth.Service, store *storage.Store) *Handler 
 }
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		// MVP: разрешаем только запросы на наш WG-host:port
-		return r.Host == "172.29.172.1:8080"
-	},
+    CheckOrigin: func(r *http.Request) bool {
+        origin := r.Header.Get("Origin")
+        if origin == "" {
+            // Non-browser clients (wscat, etc.)
+            return true
+        }
+
+        u, err := url.Parse(origin)
+        if err != nil {
+            log.Printf("ws origin parse failed: origin=%q err=%v", origin, err)
+            return false
+        }
+
+        originHost := u.Hostname()
+
+        reqHost := r.Host
+        if h, _, err := net.SplitHostPort(reqHost); err == nil {
+            reqHost = h
+        }
+
+        // Allow same-host
+        if strings.EqualFold(originHost, reqHost) {
+            return true
+        }
+
+        // Allow local dev
+        if originHost == "localhost" || originHost == "127.0.0.1" {
+            return true
+        }
+
+        log.Printf("ws origin rejected: origin=%q originHost=%q reqHost=%q hostHeader=%q",
+            origin, originHost, reqHost, r.Host,
+        )
+        return false
+    },
 }
 
 
 func (h *Handler) ServeWS(w http.ResponseWriter, r *http.Request) {
+	log.Printf("ws upgrade request: host=%q origin=%q ua=%q remote=%q",
+		r.Host,
+		r.Header.Get("Origin"),
+		r.Header.Get("User-Agent"),
+		r.RemoteAddr,
+	)
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		log.Printf("ws upgrade failed: %v", err)
 		return
 	}
 	wsConn.SetReadLimit(1 << 20) // 1MB
